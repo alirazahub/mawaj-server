@@ -8,9 +8,11 @@ const { storage, db } = require("./firebaseConfig");
 const { ref, uploadBytesResumable, getDownloadURL } = require("firebase/storage");
 const { doc, updateDoc } = require("firebase/firestore");
 
+// Define paths for output directories
 const outputDir = path.join(__dirname, "hls");
 const mp3Dir = path.join(__dirname, "mp3");
 
+// Create output directories if they don't exist
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir);
 }
@@ -19,18 +21,18 @@ if (!fs.existsSync(mp3Dir)) {
   fs.mkdirSync(mp3Dir);
 }
 
+// Create an Express app
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 app.use('/hls', express.static(outputDir));
 app.use('/mp3', express.static(mp3Dir));
 
+// Upload audio endpoint
 app.post('/upload-audio', async (req, res) => {
   try {
     const { radioId } = req.body;
     console.log('Radio ID:', radioId);
-    const mp3Dir = path.join(__dirname, "mp3");
     const audioFilePath = path.join(mp3Dir, "audio-stream.mp3");
 
     if (!fs.existsSync(audioFilePath)) {
@@ -38,18 +40,11 @@ app.post('/upload-audio', async (req, res) => {
     }
 
     const audioFile = fs.readFileSync(audioFilePath);
-
-    // Create a reference to the audio file in Firebase Storage
     const audioRef = ref(storage, `audios/live-stream-${radioId}.mp3`);
-
-    // Upload the file
     const audioUploadTask = uploadBytesResumable(audioRef, audioFile);
     await audioUploadTask;
 
-    // Get the download URL
     const audioURL = await getDownloadURL(audioRef);
-
-    // Update the Firestore document with the audio URL
     const radioDocRef = doc(db, 'radios', radioId);
     await updateDoc(radioDocRef, {
       audioURL,
@@ -67,8 +62,15 @@ app.post('/upload-audio', async (req, res) => {
   }
 });
 
-const server = app.listen(5001, () => {
-  console.log("HTTP server is listening on port 5001");
+// Load SSL certificates
+const server = require("https").createServer({
+  key: fs.readFileSync(path.join(__dirname, 'key.pem')),
+  cert: fs.readFileSync(path.join(__dirname, 'cert.pem'))
+}, app);
+
+// Start listening on port 5001
+server.listen(5001, () => {
+  console.log("HTTPS server is listening on port 5001");
 });
 
 let ffmpegProcess = null;
@@ -210,4 +212,5 @@ const startWebSocketServer = () => {
   });
 };
 
+// Start the FFmpeg process and server
 startFFmpeg();
